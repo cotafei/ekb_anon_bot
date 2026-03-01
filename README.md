@@ -71,19 +71,19 @@
 
 ### 🐳 **Через Docker (рекомендуется)**
 
-@```
-@# 1. Клонирование
-@git clone https://github.com/cotafei/ekb_anon_bot.git
-@cd ekb_anon_bot
-@
-@# 2. Настройка
-@cp .env.example .env
-@# Отредактируйте .env (токен, канал, админы)
-@
-@# 3. Запуск
-@chmod +x scripts/run.sh
-@./scripts/run.sh
-@```
+```
+# 1. Клонирование
+git clone https://github.com/cotafei/ekb_anon_bot.git
+cd ekb_anon_bot
+
+# 2. Настройка
+cp .env.example .env
+# Отредактируйте .env (токен, канал, админы)
+
+# 3. Запуск
+chmod +x scripts/run.sh
+./scripts/run.sh
+```
 
 ### 🪟 **На Windows**
 
