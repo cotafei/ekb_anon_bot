@@ -10,6 +10,10 @@ echo "=========================================="
 # Создаем директории
 mkdir -p /app/data /app/logs /app/backups
 
+# Даем правильные права
+chmod 777 /app/data /app/logs /app/backups
+chmod 666 /app/data/*.db 2>/dev/null || true
+
 # Проверяем .env
 if [ ! -f /app/.env ]; then
     echo "❌ Файл .env не найден!"
