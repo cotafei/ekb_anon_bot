@@ -2,7 +2,7 @@
 
 # ============================================
 # Скрипт автоматического обновления EKB Anon Bot с GitHub
-# Версия: 1.2 (с правильной проверкой ошибок)
+# Версия: 1.3 (с установкой зависимостей)
 # ============================================
 
 # Цвета для красивого вывода
@@ -10,7 +10,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 REPO_URL="https://github.com/cotafei/ekb_anon_bot.git"
 TEMP_DIR="ekb_anon_bot_temp"
@@ -22,30 +22,38 @@ echo -e "${BLUE}   EKB Anon Bot - Обновление с GitHub   ${NC}"
 echo -e "${BLUE}===========================================${NC}"
 echo ""
 
-# Переходим в корневую директорию проекта
+# Переходим в корневую директорию
 cd "$(dirname "$0")/.." || { echo -e "${RED}❌ Ошибка: не могу найти корень проекта${NC}"; exit 1; }
 echo -e "${GREEN}✅ Корень проекта: $(pwd)${NC}"
 
 # 1. Проверяем наличие git
 if ! command -v git &> /dev/null; then
     echo -e "${RED}❌ Git не установлен!${NC}"
-    echo "Пожалуйста, установите Git: https://git-scm.com/"
-    exit 1
+    echo "Устанавливаю Git..."
+    sudo apt update && sudo apt install -y git
 else
     echo -e "${GREEN}✅ Git найден${NC}"
 fi
 
-# 2. Проверяем наличие python
-if ! command -v python &> /dev/null; then
-    echo -e "${RED}❌ Python не установлен!${NC}"
-    echo "Устанавливаю Python..."
+# 2. Проверяем наличие python3
+if ! command -v python3 &> /dev/null; then
+    echo -e "${RED}❌ Python3 не установлен!${NC}"
+    echo "Устанавливаю Python3..."
     sudo apt update && sudo apt install -y python3 python3-pip
-    sudo ln -s /usr/bin/python3 /usr/bin/python
 else
-    echo -e "${GREEN}✅ Python найден${NC}"
+    echo -e "${GREEN}✅ Python3 найден${NC}"
 fi
 
-# 3. Проверяем наличие docker-compose
+# 3. Проверяем наличие pip3
+if ! command -v pip3 &> /dev/null; then
+    echo -e "${RED}❌ pip3 не установлен!${NC}"
+    echo "Устанавливаю pip3..."
+    sudo apt install -y python3-pip
+else
+    echo -e "${GREEN}✅ pip3 найден${NC}"
+fi
+
+# 4. Проверяем наличие docker-compose
 if ! command -v docker-compose &> /dev/null; then
     echo -e "${RED}❌ docker-compose не установлен!${NC}"
     echo "Устанавливаю docker-compose..."
@@ -55,18 +63,18 @@ else
     echo -e "${GREEN}✅ docker-compose найден${NC}"
 fi
 
-# 4. Создаем резервную копию текущей версии
+# 5. Создаем резервную копию
 echo -e "${YELLOW}📦 Создаю резервную копию...${NC}"
 mkdir -p "$BACKUP_DIR"
 BACKUP_FILE="$BACKUP_DIR/pre_update_backup_$DATE.tar.gz"
 
-# Останавливаем бота перед бэкапом (если он запущен)
+# Останавливаем бота
 if [ -f "docker/docker-compose.yml" ]; then
     echo -e "${YELLOW}⏸️  Останавливаю бота...${NC}"
     cd docker && docker-compose stop bot 2>/dev/null && cd ..
 fi
 
-# Создаем бэкап важных данных
+# Создаем бэкап
 if [ -d "data" ] || [ -d "logs" ] || [ -f ".env" ]; then
     tar -czf "$BACKUP_FILE" data/ logs/ .env 2>/dev/null
     if [ $? -eq 0 ]; then
@@ -79,63 +87,59 @@ else
     echo -e "${YELLOW}⚠️ Нет данных для бэкапа, продолжаем...${NC}"
 fi
 
-# 5. Клонируем свежую версию с GitHub
+# 6. Клонируем свежую версию
 echo -e "${YELLOW}📥 Скачиваю последнюю версию с GitHub...${NC}"
 rm -rf "$TEMP_DIR" 2>/dev/null
 git clone --depth 1 "$REPO_URL" "$TEMP_DIR"
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}❌ Ошибка при клонировании репозитория!${NC}"
-    # Запускаем бота обратно, если останавливали
-    if [ -f "docker/docker-compose.yml" ]; then
-        cd docker && docker-compose start bot 2>/dev/null && cd ..
-    fi
+    cd docker && docker-compose start bot 2>/dev/null && cd ..
     exit 1
 fi
 echo -e "${GREEN}✅ Репозиторий скачан${NC}"
 
-# 6. Сохраняем скрипт миграции
+# 7. Сохраняем скрипт миграции
 echo -e "${YELLOW}💾 Сохраняю скрипт миграции...${NC}"
 if [ -f "src/migrate_db.py" ]; then
     cp src/migrate_db.py /tmp/migrate_db.py.bak
     echo -e "${GREEN}✅ Скрипт миграции сохранен${NC}"
 fi
 
-# 7. Обновляем файлы проекта
+# 8. Обновляем файлы
 echo -e "${YELLOW}🔄 Обновляю файлы проекта...${NC}"
 
-# Обновляем папку src
+# src
 echo "   📁 Обновляю src/"
 rm -rf src_new 2>/dev/null
 cp -r "$TEMP_DIR/src" ./src_new
 
-# Восстанавливаем скрипт миграции
+# Восстанавливаем migrate_db.py
 if [ -f "/tmp/migrate_db.py.bak" ]; then
     cp /tmp/migrate_db.py.bak src_new/migrate_db.py
     echo -e "${GREEN}   ✅ Скрипт миграции восстановлен${NC}"
 fi
 
-# Обновляем docker
+# docker
 echo "   📁 Обновляю docker/"
 rm -rf docker_new 2>/dev/null
 cp -r "$TEMP_DIR/docker" ./docker_new
 
-# Обновляем scripts
+# scripts
 echo "   📁 Обновляю scripts/"
 rm -rf scripts_new 2>/dev/null
 cp -r "$TEMP_DIR/scripts" ./scripts_new
-# Сохраняем текущий скрипт обновления
 if [ -f "scripts/update_from_github.sh" ]; then
     cp scripts/update_from_github.sh scripts_new/
 fi
 
-# Обновляем корневые файлы
+# Корневые файлы
 cp "$TEMP_DIR/requirements.txt" ./requirements_new.txt 2>/dev/null
 cp "$TEMP_DIR/.env.example" ./.env.example_new 2>/dev/null
 cp "$TEMP_DIR/CHANGELOG.md" ./CHANGELOG.md_new 2>/dev/null
 cp "$TEMP_DIR/UPDATE.md" ./UPDATE.md_new 2>/dev/null
 
-# 8. Заменяем старые папки новыми
+# 9. Заменяем старые файлы
 echo -e "${YELLOW}🔁 Заменяю старые файлы новыми...${NC}"
 rm -rf src docker scripts 2>/dev/null
 mv src_new src
@@ -146,11 +150,11 @@ mv .env.example_new .env.example 2>/dev/null
 mv CHANGELOG.md_new CHANGELOG.md 2>/dev/null
 mv UPDATE.md_new UPDATE.md 2>/dev/null
 
-# Делаем скрипты исполняемыми
+# Права на выполнение
 chmod +x scripts/*.sh 2>/dev/null
 chmod +x docker/*.sh 2>/dev/null
 
-# 9. Восстанавливаем .env
+# 10. Проверяем .env
 echo -e "${YELLOW}🔧 Проверяю наличие .env файла...${NC}"
 if [ ! -f ".env" ]; then
     echo -e "${YELLOW}⚠️  Файл .env не найден, создаю из .env.example${NC}"
@@ -162,10 +166,20 @@ else
     echo -e "${GREEN}✅ .env файл сохранен${NC}"
 fi
 
-# 10. Запускаем миграцию БД
+# 11. УСТАНАВЛИВАЕМ ЗАВИСИМОСТИ PYTHON
+echo -e "${YELLOW}📦 Устанавливаю зависимости Python...${NC}"
+pip3 install -r requirements.txt
+
+if [ $? -ne 0 ]; then
+    echo -e "${RED}❌ Ошибка при установке зависимостей!${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✅ Зависимости установлены${NC}"
+
+# 12. Запускаем миграцию БД
 echo -e "${YELLOW}🔄 Запускаю миграцию базы данных...${NC}"
 cd src
-if python migrate_db.py; then
+if python3 migrate_db.py; then
     echo -e "${GREEN}✅ Миграция БД успешно выполнена${NC}"
 else
     echo -e "${RED}❌ Ошибка при миграции БД!${NC}"
@@ -173,7 +187,7 @@ else
 fi
 cd ..
 
-# 11. Запускаем бота
+# 13. Запускаем бота
 echo -e "${YELLOW}🚀 Запускаю обновленного бота...${NC}"
 cd docker
 if docker-compose up -d --build; then
@@ -185,7 +199,7 @@ else
 fi
 cd ..
 
-# 12. Убираем за собой временную папку
+# 14. Очистка
 rm -rf "$TEMP_DIR" /tmp/migrate_db.py.bak 2>/dev/null
 
 echo ""
