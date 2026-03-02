@@ -2,7 +2,7 @@
 
 # ============================================
 # Скрипт автоматического обновления EKB Anon Bot с GitHub
-# Версия: 1.5 (исправленная активация venv)
+# Версия: 2.0 (упрощенная, с гарантированной установкой)
 # ============================================
 
 # Цвета для красивого вывода
@@ -30,32 +30,12 @@ echo -e "${GREEN}✅ Корень проекта: $PROJECT_ROOT${NC}"
 # 1. Проверяем наличие git
 if ! command -v git &> /dev/null; then
     echo -e "${RED}❌ Git не установлен!${NC}"
-    echo "Устанавливаю Git..."
-    sudo apt update && sudo apt install -y git
+    exit 1
 else
     echo -e "${GREEN}✅ Git найден${NC}"
 fi
 
-# 2. Проверяем наличие python3
-if ! command -v python3 &> /dev/null; then
-    echo -e "${RED}❌ Python3 не установлен!${NC}"
-    echo "Устанавливаю Python3..."
-    sudo apt update && sudo apt install -y python3 python3-pip python3-venv
-else
-    echo -e "${GREEN}✅ Python3 найден${NC}"
-fi
-
-# 3. Проверяем наличие docker-compose
-if ! command -v docker-compose &> /dev/null; then
-    echo -e "${RED}❌ docker-compose не установлен!${NC}"
-    echo "Устанавливаю docker-compose..."
-    sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-    sudo chmod +x /usr/local/bin/docker-compose
-else
-    echo -e "${GREEN}✅ docker-compose найден${NC}"
-fi
-
-# 4. Создаем резервную копию
+# 2. Создаем резервную копию
 echo -e "${YELLOW}📦 Создаю резервную копию...${NC}"
 mkdir -p "$BACKUP_DIR"
 BACKUP_FILE="$BACKUP_DIR/pre_update_backup_$DATE.tar.gz"
@@ -67,124 +47,70 @@ if [ -f "docker/docker-compose.yml" ]; then
 fi
 
 # Создаем бэкап важных данных
-if [ -d "data" ] || [ -d "logs" ] || [ -f ".env" ]; then
-    tar -czf "$BACKUP_FILE" data/ logs/ .env 2>/dev/null
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✅ Резервная копия создана: $BACKUP_FILE${NC}"
-    else
-        echo -e "${YELLOW}⚠️ Не удалось создать бэкап (возможно, нет данных), продолжаем...${NC}"
-    fi
+tar -czf "$BACKUP_FILE" data/ logs/ .env 2>/dev/null
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✅ Резервная копия создана: $BACKUP_FILE${NC}"
+else
+    echo -e "${YELLOW}⚠️ Не удалось создать бэкап, продолжаем...${NC}"
 fi
 
-# 5. Клонируем свежую версию с GitHub
+# 3. Клонируем свежую версию
 echo -e "${YELLOW}📥 Скачиваю последнюю версию с GitHub...${NC}"
 rm -rf "$TEMP_DIR" 2>/dev/null
 git clone --depth 1 "$REPO_URL" "$TEMP_DIR"
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}❌ Ошибка при клонировании репозитория!${NC}"
-    # Запускаем бота обратно, если останавливали
-    if [ -f "docker/docker-compose.yml" ]; then
-        cd docker && docker-compose start bot 2>/dev/null && cd "$PROJECT_ROOT" || exit
-    fi
     exit 1
 fi
 echo -e "${GREEN}✅ Репозиторий скачан${NC}"
 
-# 6. Сохраняем скрипт миграции
-echo -e "${YELLOW}💾 Сохраняю скрипт миграции...${NC}"
+# 4. Сохраняем скрипт миграции
 if [ -f "src/migrate_db.py" ]; then
     cp src/migrate_db.py /tmp/migrate_db.py.bak
     echo -e "${GREEN}✅ Скрипт миграции сохранен${NC}"
 fi
 
-# 7. Обновляем файлы проекта
+# 5. Обновляем файлы
 echo -e "${YELLOW}🔄 Обновляю файлы проекта...${NC}"
 
-# Обновляем папку src
-echo "   📁 Обновляю src/"
-rm -rf src_new 2>/dev/null
-cp -r "$TEMP_DIR/src" ./src_new
-
-# Восстанавливаем скрипт миграции
+# src
+rm -rf src 2>/dev/null
+cp -r "$TEMP_DIR/src" ./src
 if [ -f "/tmp/migrate_db.py.bak" ]; then
-    cp /tmp/migrate_db.py.bak src_new/migrate_db.py
-    echo -e "${GREEN}   ✅ Твой скрипт миграции восстановлен${NC}"
+    cp /tmp/migrate_db.py.bak src/migrate_db.py
+    echo -e "${GREEN}   ✅ Скрипт миграции восстановлен${NC}"
 fi
 
-# Обновляем docker
-echo "   📁 Обновляю docker/"
-rm -rf docker_new 2>/dev/null
-cp -r "$TEMP_DIR/docker" ./docker_new
+# docker
+rm -rf docker 2>/dev/null
+cp -r "$TEMP_DIR/docker" ./docker
 
-# Обновляем scripts
-echo "   📁 Обновляю scripts/"
-rm -rf scripts_new 2>/dev/null
-cp -r "$TEMP_DIR/scripts" ./scripts_new
-# Сохраняем текущий скрипт обновления
-if [ -f "scripts/update_from_github.sh" ]; then
-    cp scripts/update_from_github.sh scripts_new/
-fi
+# scripts
+rm -rf scripts 2>/dev/null
+cp -r "$TEMP_DIR/scripts" ./scripts
+chmod +x scripts/*.sh
 
-# Обновляем корневые файлы
-cp "$TEMP_DIR/requirements.txt" ./requirements_new.txt 2>/dev/null
-cp "$TEMP_DIR/.env.example" ./.env.example_new 2>/dev/null
-cp "$TEMP_DIR/CHANGELOG.md" ./CHANGELOG.md_new 2>/dev/null
-cp "$TEMP_DIR/UPDATE.md" ./UPDATE.md_new 2>/dev/null
+# корневые файлы
+cp "$TEMP_DIR/requirements.txt" ./requirements.txt
+cp "$TEMP_DIR/.env.example" ./.env.example
+cp "$TEMP_DIR/CHANGELOG.md" ./CHANGELOG.md 2>/dev/null
+cp "$TEMP_DIR/UPDATE.md" ./UPDATE.md 2>/dev/null
 
-# 8. Заменяем старые папки новыми
-echo -e "${YELLOW}🔁 Заменяю старые файлы новыми...${NC}"
-rm -rf src docker scripts 2>/dev/null
-mv src_new src
-mv docker_new docker
-mv scripts_new scripts
-mv requirements_new.txt requirements.txt 2>/dev/null
-mv .env.example_new .env.example 2>/dev/null
-mv CHANGELOG.md_new CHANGELOG.md 2>/dev/null
-mv UPDATE.md_new UPDATE.md 2>/dev/null
+echo -e "${GREEN}✅ Файлы обновлены${NC}"
 
-# Делаем скрипты исполняемыми
-chmod +x scripts/*.sh 2>/dev/null
-chmod +x docker/*.sh 2>/dev/null
-
-# 9. Восстанавливаем .env
-echo -e "${YELLOW}🔧 Проверяю наличие .env файла...${NC}"
+# 6. Проверяем .env
 if [ ! -f ".env" ]; then
     echo -e "${YELLOW}⚠️  Файл .env не найден, создаю из .env.example${NC}"
     cp .env.example .env
     echo -e "${RED}⚠️  ОТРЕДАКТИРУЙТЕ .env файл!${NC}"
-    echo -e "${YELLOW}   nano .env${NC}"
     exit 1
-else
-    echo -e "${GREEN}✅ .env файл сохранен${NC}"
 fi
 
-# 10. Активируем виртуальное окружение или создаем его
-echo -e "${YELLOW}📦 Проверяю виртуальное окружение...${NC}"
-if [ ! -d "venv" ]; then
-    echo "   Создаю новое виртуальное окружение..."
-    python3 -m venv venv
-fi
-
-# Явно указываем путь к venv
-VENV_PATH="$PROJECT_ROOT/venv"
-
-# Активируем виртуальное окружение (правильный способ)
-echo -e "${YELLOW}🔧 Активирую виртуальное окружение...${NC}"
-source "$VENV_PATH/bin/activate"
-
-# Проверяем что venv активировался
-if [ -z "$VIRTUAL_ENV" ]; then
-    echo -e "${RED}❌ Не удалось активировать виртуальное окружение!${NC}"
-    exit 1
-else
-    echo -e "${GREEN}✅ Виртуальное окружение активировано: $VIRTUAL_ENV${NC}"
-fi
-
-# Устанавливаем/обновляем зависимости
+# 7. УСТАНАВЛИВАЕМ ЗАВИСИМОСТИ ГЛОБАЛЬНО (через --break-system-packages)
 echo -e "${YELLOW}📦 Устанавливаю зависимости Python...${NC}"
-pip install --upgrade pip
-pip install -r requirements.txt
+pip3 install --upgrade pip --break-system-packages
+pip3 install aiogram==3.17.0 python-dotenv==1.0.0 aiohttp==3.9.3 pytz==2024.1 --break-system-packages
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}❌ Ошибка при установке зависимостей!${NC}"
@@ -192,17 +118,10 @@ if [ $? -ne 0 ]; then
 fi
 echo -e "${GREEN}✅ Зависимости установлены${NC}"
 
-# Проверяем что dotenv установился
-python -c "import dotenv; print('✅ dotenv установлен')" 2>/dev/null
-if [ $? -ne 0 ]; then
-    echo -e "${RED}❌ dotenv не установлен! Устанавливаю принудительно...${NC}"
-    pip install python-dotenv==1.0.0
-fi
-
-# 11. Запускаем миграцию БД (уже в venv)
+# 8. Запускаем миграцию
 echo -e "${YELLOW}🔄 Запускаю миграцию базы данных...${NC}"
 cd src
-python migrate_db.py
+python3 migrate_db.py
 MIGRATION_RESULT=$?
 cd "$PROJECT_ROOT" || exit
 
@@ -213,23 +132,19 @@ else
     exit 1
 fi
 
-# 12. Выходим из виртуального окружения
-deactivate 2>/dev/null
-echo -e "${YELLOW}🔧 Вышел из виртуального окружения${NC}"
-
-# 13. Запускаем бота
+# 9. Запускаем бота
 echo -e "${YELLOW}🚀 Запускаю обновленного бота...${NC}"
 cd docker
-if docker-compose up -d --build; then
+docker-compose up -d --build
+if [ $? -eq 0 ]; then
     echo -e "${GREEN}✅ Бот успешно обновлен и запущен!${NC}"
 else
     echo -e "${RED}❌ Ошибка при запуске бота!${NC}"
-    echo "   Проверьте логи: cd docker && docker-compose logs"
     exit 1
 fi
 cd "$PROJECT_ROOT" || exit
 
-# 14. Убираем за собой временную папку
+# 10. Убираем временные файлы
 rm -rf "$TEMP_DIR" /tmp/migrate_db.py.bak 2>/dev/null
 
 echo ""
