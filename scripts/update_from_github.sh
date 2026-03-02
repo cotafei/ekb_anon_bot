@@ -2,7 +2,7 @@
 
 # ============================================
 # Скрипт автоматического обновления EKB Anon Bot с GitHub
-# Версия: 2.0 (упрощенная, с гарантированной установкой)
+# Версия: 3.0 (РАБОЧАЯ - проверено в бою)
 # ============================================
 
 # Цвета для красивого вывода
@@ -35,7 +35,23 @@ else
     echo -e "${GREEN}✅ Git найден${NC}"
 fi
 
-# 2. Создаем резервную копию
+# 2. Проверяем наличие python3
+if ! command -v python3 &> /dev/null; then
+    echo -e "${RED}❌ Python3 не установлен!${NC}"
+    exit 1
+else
+    echo -e "${GREEN}✅ Python3 найден${NC}"
+fi
+
+# 3. Проверяем наличие docker-compose
+if ! command -v docker-compose &> /dev/null; then
+    echo -e "${RED}❌ docker-compose не установлен!${NC}"
+    exit 1
+else
+    echo -e "${GREEN}✅ docker-compose найден${NC}"
+fi
+
+# 4. Создаем резервную копию
 echo -e "${YELLOW}📦 Создаю резервную копию...${NC}"
 mkdir -p "$BACKUP_DIR"
 BACKUP_FILE="$BACKUP_DIR/pre_update_backup_$DATE.tar.gz"
@@ -47,14 +63,16 @@ if [ -f "docker/docker-compose.yml" ]; then
 fi
 
 # Создаем бэкап важных данных
-tar -czf "$BACKUP_FILE" data/ logs/ .env 2>/dev/null
-if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✅ Резервная копия создана: $BACKUP_FILE${NC}"
-else
-    echo -e "${YELLOW}⚠️ Не удалось создать бэкап, продолжаем...${NC}"
+if [ -d "data" ] || [ -d "logs" ] || [ -f ".env" ]; then
+    tar -czf "$BACKUP_FILE" data/ logs/ .env 2>/dev/null
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✅ Резервная копия создана: $BACKUP_FILE${NC}"
+    else
+        echo -e "${YELLOW}⚠️ Не удалось создать бэкап, продолжаем...${NC}"
+    fi
 fi
 
-# 3. Клонируем свежую версию
+# 5. Клонируем свежую версию
 echo -e "${YELLOW}📥 Скачиваю последнюю версию с GitHub...${NC}"
 rm -rf "$TEMP_DIR" 2>/dev/null
 git clone --depth 1 "$REPO_URL" "$TEMP_DIR"
@@ -65,13 +83,13 @@ if [ $? -ne 0 ]; then
 fi
 echo -e "${GREEN}✅ Репозиторий скачан${NC}"
 
-# 4. Сохраняем скрипт миграции
+# 6. Сохраняем скрипт миграции
 if [ -f "src/migrate_db.py" ]; then
     cp src/migrate_db.py /tmp/migrate_db.py.bak
     echo -e "${GREEN}✅ Скрипт миграции сохранен${NC}"
 fi
 
-# 5. Обновляем файлы
+# 7. Обновляем файлы
 echo -e "${YELLOW}🔄 Обновляю файлы проекта...${NC}"
 
 # src
@@ -99,18 +117,18 @@ cp "$TEMP_DIR/UPDATE.md" ./UPDATE.md 2>/dev/null
 
 echo -e "${GREEN}✅ Файлы обновлены${NC}"
 
-# 6. Проверяем .env
+# 8. Проверяем .env
 if [ ! -f ".env" ]; then
     echo -e "${YELLOW}⚠️  Файл .env не найден, создаю из .env.example${NC}"
     cp .env.example .env
     echo -e "${RED}⚠️  ОТРЕДАКТИРУЙТЕ .env файл!${NC}"
+    echo -e "${YELLOW}   nano .env${NC}"
     exit 1
 fi
 
-# 7. УСТАНАВЛИВАЕМ ЗАВИСИМОСТИ ГЛОБАЛЬНО (через --break-system-packages)
+# 9. УСТАНАВЛИВАЕМ ЗАВИСИМОСТИ (РАБОЧАЯ КОМАНДА)
 echo -e "${YELLOW}📦 Устанавливаю зависимости Python...${NC}"
-pip3 install --upgrade pip --break-system-packages
-pip3 install aiogram==3.17.0 python-dotenv==1.0.0 aiohttp==3.9.3 pytz==2024.1 --break-system-packages
+pip3 install python-dotenv aiogram aiohttp pytz --break-system-packages --ignore-installed
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}❌ Ошибка при установке зависимостей!${NC}"
@@ -118,7 +136,7 @@ if [ $? -ne 0 ]; then
 fi
 echo -e "${GREEN}✅ Зависимости установлены${NC}"
 
-# 8. Запускаем миграцию
+# 10. Запускаем миграцию
 echo -e "${YELLOW}🔄 Запускаю миграцию базы данных...${NC}"
 cd src
 python3 migrate_db.py
@@ -132,7 +150,7 @@ else
     exit 1
 fi
 
-# 9. Запускаем бота
+# 11. Запускаем бота (РАБОЧАЯ КОМАНДА)
 echo -e "${YELLOW}🚀 Запускаю обновленного бота...${NC}"
 cd docker
 docker-compose up -d --build
@@ -144,7 +162,7 @@ else
 fi
 cd "$PROJECT_ROOT" || exit
 
-# 10. Убираем временные файлы
+# 12. Убираем временные файлы
 rm -rf "$TEMP_DIR" /tmp/migrate_db.py.bak 2>/dev/null
 
 echo ""
@@ -153,3 +171,6 @@ echo -e "${BLUE}📊 Информация:${NC}"
 echo "   • Резервная копия: $BACKUP_FILE"
 echo "   • Миграция БД: выполнена"
 echo "   • Логи: cd docker && docker-compose logs -f"
+echo ""
+echo -e "${YELLOW}📝 Если хочешь посмотреть логи сразу:${NC}"
+echo "   cd docker && docker-compose logs -f"
