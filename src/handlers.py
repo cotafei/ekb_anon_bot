@@ -1,6 +1,7 @@
 """
 Обработчики команд и сообщений для пользователей
-Версия: 1.4.0
+Содержит базовые команды и обработку новых постов
+Версия: 1.1.1
 """
 
 from aiogram import types, F
@@ -14,7 +15,7 @@ from config import ADMINS
 from admin import ModeratorStates
 
 async def help_handler(message: types.Message):
-    """Обработчик команды /help"""
+    """Обработчик команды /help - показывает справку по боту"""
     text = (
         "ℹ️ Помощь по боту:\n\n"
         "📝 Отправь текст, фото или видео с подписью для создания поста\n"
@@ -30,7 +31,7 @@ async def help_handler(message: types.Message):
     await message.answer(text)
 
 async def rules_handler(message: types.Message):
-    """Обработчик команды /rules"""
+    """Обработчик команды /rules - показывает правила публикации"""
     text = (
         "📋 Правила публикации:\n\n"
         "✅ Минимум 20 символов\n"
@@ -39,12 +40,12 @@ async def rules_handler(message: types.Message):
         "✅ Без ссылок и контактов\n"
         "✅ Фото/видео должны быть адекватными\n"
         "✅ Контент должен соответствовать тематике\n\n"
-        "❌ Нарушение правил = бан\n"
+        "❌ Нарушение правил = бан"
     )
     await message.answer(text)
 
 async def stats_handler(message: types.Message):
-    """Обработчик команды /stats (базовая статистика)"""
+    """Обработчик команды /stats - базовая статистика пользователя"""
     approved, total = get_user_stats(message.from_user.id)
     
     text = (
@@ -57,15 +58,17 @@ async def stats_handler(message: types.Message):
     await message.answer(text)
 
 async def post_handler(message: types.Message, state: FSMContext):
-    """Обработчик новых постов"""
+    """
+    Обработчик новых постов от пользователей
+    Принимает текст, фото, видео, проверяет правила и отправляет на модерацию
+    """
     try:
         # Проверяем, не находится ли админ в режиме модерации
         current_state = await state.get_state()
         if current_state == ModeratorStates.waiting_for_reject_reason.state:
-            # Если админ вводит причину отказа - пропускаем проверку
             return
         
-        # Проверяем текст
+        # Определяем текст контента
         if message.text:
             text_content = message.text
         elif message.caption:
@@ -89,33 +92,42 @@ async def post_handler(message: types.Message, state: FSMContext):
         else:
             post_id = add_post(message.from_user.id, text_content)
         
-        await message.answer(
-            "✅ Пост отправлен на модерацию!\n"
-            f"📋 ID вашего поста: #{post_id}\n\n"
-            "Ожидайте решения модератора. Обычно это занимает несколько часов."
-        )
+        if post_id:
+            await message.answer(
+                "✅ Пост отправлен на модерацию!\n"
+                f"📋 ID вашего поста: #{post_id}\n\n"
+                "Ожидайте решения модератора. Обычно это занимает несколько часов."
+            )
+        else:
+            await message.answer("❌ Ошибка при отправке поста. Возможно, вы забанены или слишком часто отправляете посты.")
         
     except Exception as e:
         await message.answer("❌ Произошла ошибка при обработке поста. Попробуйте позже.")
         print(f"Error in post_handler: {e}")
 
 async def cancel_handler(message: types.Message, state: FSMContext):
-    """Отмена текущего действия (команда /cancel)"""
+    """Обработчик команды /cancel - отмена текущего действия"""
     current_state = await state.get_state()
-    if current_state is None:
-        await message.answer("❌ Нет активного действия для отмены")
-        return
     
-    # Если админ в режиме модерации
     if current_state == ModeratorStates.waiting_for_reject_reason.state:
         from admin import cancel_moderation
         await cancel_moderation(message, state)
     else:
-        await state.clear()
-        await message.answer("✅ Действие отменено")
+        if current_state is None:
+            await message.answer("❌ Нет активного действия для отмены")
+        else:
+            await state.clear()
+            await message.answer("✅ Действие отменено")
 
 async def skip_handler(message: types.Message, state: FSMContext):
-    """Пропуск текущего действия (команда /skip)"""
+    """
+    Обработчик команды /skip - пропуск модерации (только для админов)
+    Быстрый отказ без ввода причины
+    """
+    if message.from_user.id not in ADMINS:
+        await message.answer("❌ У вас нет прав для этой команды")
+        return
+    
     current_state = await state.get_state()
     if current_state != ModeratorStates.waiting_for_reject_reason.state:
         await message.answer("❌ Нет активной модерации для пропуска")

@@ -1,39 +1,54 @@
 #!/bin/bash
 
-# Цвета для вывода
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
+BLUE='\033[0;34m'
 NC='\033[0m'
 
-echo -e "${GREEN}==========================================${NC}"
-echo -e "${GREEN}  EKB Anon Bot - Запуск${NC}"
-echo -e "${GREEN}==========================================${NC}"
+echo -e "${BLUE}==========================================${NC}"
+echo -e "${BLUE}  EKB Anon Bot v1.1.1 - Запуск${NC}"
+echo -e "${BLUE}==========================================${NC}"
+echo ""
 
-# Переходим в корневую директорию
-cd "$(dirname "$0")/.." || exit
+cd "$(dirname "$0")/.." || exit 1
 
-# Создаем директории для данных и логов
 mkdir -p data logs backups
 echo -e "${GREEN}✅ Директории созданы${NC}"
 
-# Проверяем наличие .env файла
 if [ ! -f .env ]; then
     echo -e "${RED}❌ Файл .env не найден!${NC}"
-    echo -e "${YELLOW}Скопируйте .env.example в .env и заполните данные:${NC}"
-    echo "cp .env.example .env"
+    echo ""
+    echo -e "${YELLOW}Создаю .env из примера...${NC}"
+    cp .env.example .env 2>/dev/null
+    echo ""
+    echo -e "${RED}⚠️  Отредактируйте файл .env и укажите:${NC}"
+    echo "   - TOKEN"
+    echo "   - CHANNEL_ID"
+    echo "   - ADMINS"
+    echo ""
     exit 1
 fi
 
-# Проверяем Docker
 if ! command -v docker &> /dev/null; then
     echo -e "${RED}❌ Docker не установлен!${NC}"
     exit 1
 fi
 
-# Запускаем через docker-compose
 echo -e "${YELLOW}🚀 Запуск контейнера...${NC}"
-docker-compose -f docker/docker-compose.yml up -d --build
+cd docker && docker-compose down 2>/dev/null && docker-compose up -d --build
+cd ..
 
-echo -e "${GREEN}✅ Бот запущен!${NC}"
-echo -e "${YELLOW}📊 Логи: docker-compose -f docker/docker-compose.yml logs -f${NC}"
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✅ Бот успешно запущен!${NC}"
+    echo ""
+    echo -e "${BLUE}📊 Полезные команды:${NC}"
+    echo -e "  ${YELLOW}•${NC} Логи: ${GREEN}cd docker && docker-compose logs -f${NC}"
+    echo -e "  ${YELLOW}•${NC} Остановка: ${GREEN}scripts/stop.sh${NC}"
+    echo -e "  ${YELLOW}•${NC} Бэкап: ${GREEN}scripts/backup.sh${NC}"
+    echo -e "  ${YELLOW}•${NC} Обновление: ${GREEN}scripts/update_from_github.sh${NC}"
+    echo ""
+else
+    echo -e "${RED}❌ Ошибка при запуске!${NC}"
+    exit 1
+fi

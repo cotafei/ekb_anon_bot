@@ -3,31 +3,34 @@
 echo "=========================================="
 echo "  EKB Anon Bot - Запуск в Docker"
 echo "=========================================="
-echo "Версия: 1.1.0"
+echo "Версия: 1.1.1"
 echo "Дата: $(date)"
 echo "=========================================="
 
-# Создаем необходимые директории
-mkdir -p /app/data /app/logs
+# Создаем директории
+mkdir -p /app/data /app/logs /app/backups
 
-# Проверяем наличие .env файла
+# Проверяем .env
 if [ ! -f /app/.env ]; then
     echo "❌ Файл .env не найден!"
-    echo "Скопируйте .env.example в .env и заполните данные"
     exit 1
 fi
 
-# Проверяем наличие токена
+# Проверяем токен
 if ! grep -q "TOKEN" /app/.env; then
-    echo "❌ Токен бота не найден в .env файле!"
+    echo "❌ Токен не найден!"
     exit 1
 fi
 
 echo "✅ Конфигурация загружена"
 echo "📁 База данных: /app/data/anon_ekb.db"
-echo "📁 Логи: /app/logs/bot.log"
 echo "=========================================="
 
-# Запускаем бота
+# Запускаем миграцию если есть
+if [ -f /app/src/migrate_db.py ]; then
+    echo "🔄 Проверка миграции БД..."
+    cd /app/src && python migrate_db.py
+fi
+
 echo "🚀 Запуск бота..."
 exec python /app/src/main.py

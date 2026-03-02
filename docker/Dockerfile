@@ -1,28 +1,29 @@
-# Используем официальный образ Python
 FROM python:3.11-slim
 
-# Устанавливаем рабочую директорию
-WORKDIR /app
-
-# Устанавливаем системные зависимости
+# Установка системных зависимостей
 RUN apt-get update && apt-get install -y \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Копируем файл с зависимостями
-COPY requirements.txt .
+# Создание пользователя для безопасности
+RUN useradd -m -u 1000 botuser && mkdir -p /app && chown -R botuser:botuser /app
 
-# Устанавливаем Python зависимости
+WORKDIR /app
+
+# Копирование requirements
+COPY --chown=botuser:botuser requirements.txt .
+
+# Установка Python зависимостей
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем все файлы бота
-COPY . .
+# Копирование исходного кода
+COPY --chown=botuser:botuser . .
 
-# Делаем entrypoint исполняемым
-RUN chmod +x /app/docker/entrypoint.sh
+# Права на выполнение entrypoint
+RUN chmod +x docker/entrypoint.sh
 
-# Создаем volume для базы данных и логов
-VOLUME ["/app/data", "/app/logs"]
+# Переключение на непривилегированного пользователя
+USER botuser
 
-# Команда для запуска бота через entrypoint
+# Запуск бота
 ENTRYPOINT ["/app/docker/entrypoint.sh"]

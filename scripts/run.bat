@@ -1,32 +1,53 @@
 @echo off
 chcp 65001 > nul
+title EKB Anon Bot Launcher
 cd /d %~dp0..
+
 echo ========================================
-echo    EKB Anon Bot - Запуск на Windows
+echo    EKB Anon Bot v1.1.1 - Запуск на Windows
 echo ========================================
 echo.
 
-REM Создаем директории
 if not exist data mkdir data
 if not exist logs mkdir logs
 if not exist backups mkdir backups
 
-echo [OK] Директории созданы
+echo [✅] Директории созданы
 echo.
 
-REM Проверяем .env
 if not exist .env (
-    echo [ERROR] Файл .env не найден!
-    echo Скопируйте .env.example в .env и заполните данные
+    echo [❌] Файл .env не найден!
+    echo.
+    echo Создаю .env из примера...
+    copy .env.example .env 2>nul
+    echo.
+    echo [⚠️] Отредактируйте файл .env и укажите:
+    echo    - TOKEN
+    echo    - CHANNEL_ID
+    echo    - ADMINS
+    echo.
     pause
     exit /b 1
 )
 
-REM Запускаем через Docker
-echo [INFO] Запуск бота...
-docker-compose -f docker/docker-compose.yml up -d --build
+where docker >nul 2>nul
+if %errorlevel% neq 0 (
+    echo [❌] Docker не найден!
+    pause
+    exit /b 1
+)
+
+echo [🚀] Запуск бота...
+cd docker && docker-compose down 2>nul && docker-compose up -d --build
+cd ..
 
 echo.
-echo [OK] Бот запущен!
-echo [INFO] Для просмотра логов: docker-compose -f docker/docker-compose.yml logs -f
+echo [✅] Бот запущен!
+echo.
+echo [📊] Полезные команды:
+echo   • Логи: cd docker ^&^& docker-compose logs -f
+echo   • Остановка: scripts\stop.bat
+echo   • Бэкап: scripts\backup.bat
+echo   • Обновление: scripts\update_from_github.bat
+echo.
 pause

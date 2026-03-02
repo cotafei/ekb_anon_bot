@@ -1,5 +1,6 @@
 """
 EKB Anon Bot - Главный модуль приложения
+Анонимный бот для публикации постов в Telegram канал с модерацией
 Версия: 1.1.1
 """
 
@@ -8,16 +9,14 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import NoReturn
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import Command
+from aiogram.filters import Command, StateFilter
 from aiogram.exceptions import TelegramNetworkError, TelegramRetryAfter
 from aiogram.types import BotCommand
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.fsm.context import FSMContext
 
 # Добавляем путь к src для импортов
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -44,7 +43,6 @@ from features import (
 
 class Paths:
     """Управление путями к директориям"""
-    # Поднимаемся на уровень выше от src/
     BASE_DIR = Path(__file__).parent.parent
     LOG_DIR = BASE_DIR / 'logs'
     DATA_DIR = BASE_DIR / 'data'
@@ -55,7 +53,6 @@ class Paths:
         cls.LOG_DIR.mkdir(exist_ok=True, parents=True)
         cls.DATA_DIR.mkdir(exist_ok=True, parents=True)
         
-        # Создаем пустой файл лога, если его нет
         log_file = cls.LOG_DIR / 'bot.log'
         if not log_file.exists():
             log_file.touch(exist_ok=True)
@@ -79,33 +76,26 @@ class BotLogger:
         """Настройка логирования"""
         log_file = Paths.LOG_DIR / 'bot.log'
         
-        # Создаем форматтер
         formatter = logging.Formatter(
             '%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
         )
         
-        # Файловый handler (UTF-8)
         file_handler = logging.FileHandler(log_file, encoding='utf-8', mode='a')
         file_handler.setFormatter(formatter)
         file_handler.setLevel(logging.INFO)
         
-        # Консольный handler с обработкой Unicode для Windows
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setFormatter(formatter)
         console_handler.setLevel(logging.INFO)
         
-        # Настройка корневого логгера
         root_logger = logging.getLogger()
         root_logger.setLevel(logging.INFO)
-        
-        # Удаляем существующие handler'ы, чтобы избежать дублирования
         root_logger.handlers.clear()
-        
         root_logger.addHandler(file_handler)
         root_logger.addHandler(console_handler)
         
-        # Логгер для библиотек (уменьшаем подробность)
+        # Уменьшаем подробность логов от библиотек
         logging.getLogger('aiogram').setLevel(logging.WARNING)
         logging.getLogger('aiohttp').setLevel(logging.WARNING)
         logging.getLogger('asyncio').setLevel(logging.WARNING)
@@ -128,7 +118,7 @@ class EKBAnonBot:
         self.storage = MemoryStorage()
         
     async def check_other_instances(self) -> bool:
-        """Проверяет, не запущен ли бот в другом месте"""
+        """Проверяет, не запущен ли бот в другом месте (вебхук)"""
         try:
             webhook_info = await self.bot.get_webhook_info()
             if webhook_info.url:
@@ -144,11 +134,10 @@ class EKBAnonBot:
         """Инициализация компонентов бота"""
         self.logger.info("🔧 Инициализация компонентов...")
         
-        # Проверяем директории
         self.logger.info(f"📁 Директория данных: {Paths.DATA_DIR}")
         self.logger.info(f"📁 Директория логов: {Paths.LOG_DIR}")
         
-        # Инициализация бота с поддержкой HTML
+        # Создаем экземпляр бота
         self.bot = Bot(
             token=TOKEN,
             default=DefaultBotProperties(
@@ -156,13 +145,12 @@ class EKBAnonBot:
             )
         )
         
-        # Проверяем другие экземпляры
         await self.check_other_instances()
         
-        # Инициализация диспетчера с хранилищем состояний
+        # Создаем диспетчер с хранилищем состояний
         self.dp = Dispatcher(storage=self.storage)
         
-        # Инициализация БД
+        # Инициализируем базу данных
         try:
             init_db()
             self.logger.info("💾 База данных инициализирована")
@@ -170,30 +158,41 @@ class EKBAnonBot:
             self.logger.error(f"❌ Ошибка инициализации БД: {e}")
             raise
         
-        # Регистрация всех обработчиков
+        # Регистрируем обработчики
         await self._register_handlers()
         
-        # Установка команд
+        # Устанавливаем команды
         await self._set_commands()
         
-        # Информация о боте
         bot_info = await self.bot.get_me()
         self.logger.info(f"🤖 Бот @{bot_info.username} (ID: {bot_info.id})")
         
     async def _register_handlers(self) -> None:
-        """Регистрация всех обработчиков с правильным приоритетом"""
+        """Регистрация всех обработчиков сообщений"""
         self.logger.info("📝 Регистрация обработчиков...")
         
-        # ===== ВАЖНО: FSM СОСТОЯНИЯ - САМЫЙ ВЫСОКИЙ ПРИОРИТЕТ =====
-        # Эти обработчики срабатывают только когда бот находится в конкретном состоянии
-        self.dp.message.register(
-            process_reject_reason, 
-            ModeratorStates.waiting_for_reject_reason
-        )
-        
-        # ===== КОМАНДЫ УПРАВЛЕНИЯ =====
+        # ===== КОМАНДЫ УПРАВЛЕНИЯ (ВЫСШИЙ ПРИОРИТЕТ) =====
         self.dp.message.register(cancel_handler, Command("cancel"))
         self.dp.message.register(skip_handler, Command("skip"))
+        
+        # ===== FSM СОСТОЯНИЯ =====
+        self.dp.message.register(
+            process_reject_reason, 
+            StateFilter(ModeratorStates.waiting_for_reject_reason)
+        )
+        
+        # ===== АДМИНСКИЕ КОМАНДЫ =====
+        self.dp.message.register(
+            admin_panel, 
+            Command("moderate"),
+            lambda message: message.from_user.id in ADMINS
+        )
+        
+        self.dp.message.register(
+            admin_stats, 
+            Command("admin_stats"),
+            lambda message: message.from_user.id in ADMINS
+        )
         
         # ===== ОБЫЧНЫЕ КОМАНДЫ =====
         self.dp.message.register(start_handler, Command("start"))
@@ -203,10 +202,6 @@ class EKBAnonBot:
         self.dp.message.register(referral_handler, Command("referral"))
         self.dp.message.register(daily_bonus_handler, Command("daily"))
         self.dp.message.register(shop_handler, Command("shop"))
-        
-        # ===== АДМИНСКИЕ КОМАНДЫ =====
-        self.dp.message.register(admin_panel, Command("moderate"))
-        self.dp.message.register(admin_stats, Command("admin_stats"))
         
         # ===== ОБРАБОТКА КОНТЕНТА =====
         self.dp.message.register(
@@ -220,12 +215,11 @@ class EKBAnonBot:
         # ===== ВСЕ ОСТАЛЬНЫЕ СООБЩЕНИЯ =====
         self.dp.message.register(unknown_handler)
         
-        # Подсчет обработчиков
         handlers_count = len(self.dp.message.handlers)
         self.logger.info(f"✅ Зарегистрировано {handlers_count} обработчиков")
         
     async def _set_commands(self) -> None:
-        """Установка команд бота"""
+        """Установка команд в интерфейсе Telegram"""
         self.logger.info("⌨️ Установка команд...")
         
         # Общие команды для всех пользователей
@@ -240,7 +234,6 @@ class EKBAnonBot:
             BotCommand(command="cancel", description="❌ Отменить действие"),
         ]
         
-        # Устанавливаем команды для всех
         await self.bot.set_my_commands(user_commands)
         
         # Дополнительные команды для админов
@@ -347,7 +340,7 @@ class EKBAnonBot:
 # ============================================================
 
 def setup_exception_handling() -> None:
-    """Настройка обработки исключений"""
+    """Настройка обработки необработанных исключений"""
     def handle_exception(exc_type, exc_value, exc_traceback):
         if issubclass(exc_type, KeyboardInterrupt):
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
@@ -364,24 +357,19 @@ def setup_exception_handling() -> None:
 # ============================================================
 
 async def main() -> None:
-    """Точка входа"""
-    # Настройка логирования
+    """Точка входа в приложение"""
     logger = BotLogger.setup()
     
-    # Красивый вывод при запуске
     print("\n" + "="*60)
-    print("📦 EKB Anon Bot v1.1.0".center(60))
+    print("📦 EKB Anon Bot v1.1.1".center(60))
     print("="*60 + "\n")
     
-    # Проверка токена
     if not TOKEN:
         logger.critical("❌ Токен не найден! Проверьте .env файл")
         sys.exit(1)
     
-    # Настройка обработки исключений
     setup_exception_handling()
     
-    # Запуск бота
     bot = EKBAnonBot()
     
     try:
@@ -405,5 +393,4 @@ if __name__ == "__main__":
     except Exception as e:
         logging.basicConfig(level=logging.CRITICAL)
         logging.critical(f"💥 Критическая ошибка запуска: {e}", exc_info=True)
-
         sys.exit(1)
