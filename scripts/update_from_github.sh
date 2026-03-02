@@ -2,7 +2,7 @@
 
 # ============================================
 # Скрипт автоматического обновления EKB Anon Bot с GitHub
-# Версия: 1.4 (с поддержкой виртуального окружения)
+# Версия: 1.5 (исправленная активация venv)
 # ============================================
 
 # Цвета для красивого вывода
@@ -24,7 +24,8 @@ echo ""
 
 # Переходим в корневую директорию проекта
 cd "$(dirname "$0")/.." || { echo -e "${RED}❌ Ошибка: не могу найти корень проекта${NC}"; exit 1; }
-echo -e "${GREEN}✅ Корень проекта: $(pwd)${NC}"
+PROJECT_ROOT=$(pwd)
+echo -e "${GREEN}✅ Корень проекта: $PROJECT_ROOT${NC}"
 
 # 1. Проверяем наличие git
 if ! command -v git &> /dev/null; then
@@ -62,7 +63,7 @@ BACKUP_FILE="$BACKUP_DIR/pre_update_backup_$DATE.tar.gz"
 # Останавливаем бота перед бэкапом
 if [ -f "docker/docker-compose.yml" ]; then
     echo -e "${YELLOW}⏸️  Останавливаю бота...${NC}"
-    cd docker && docker-compose stop bot 2>/dev/null && cd ..
+    cd docker && docker-compose stop bot 2>/dev/null && cd "$PROJECT_ROOT" || exit
 fi
 
 # Создаем бэкап важных данных
@@ -84,7 +85,7 @@ if [ $? -ne 0 ]; then
     echo -e "${RED}❌ Ошибка при клонировании репозитория!${NC}"
     # Запускаем бота обратно, если останавливали
     if [ -f "docker/docker-compose.yml" ]; then
-        cd docker && docker-compose start bot 2>/dev/null && cd ..
+        cd docker && docker-compose start bot 2>/dev/null && cd "$PROJECT_ROOT" || exit
     fi
     exit 1
 fi
@@ -165,8 +166,20 @@ if [ ! -d "venv" ]; then
     python3 -m venv venv
 fi
 
-# Активируем виртуальное окружение
-source venv/bin/activate
+# Явно указываем путь к venv
+VENV_PATH="$PROJECT_ROOT/venv"
+
+# Активируем виртуальное окружение (правильный способ)
+echo -e "${YELLOW}🔧 Активирую виртуальное окружение...${NC}"
+source "$VENV_PATH/bin/activate"
+
+# Проверяем что venv активировался
+if [ -z "$VIRTUAL_ENV" ]; then
+    echo -e "${RED}❌ Не удалось активировать виртуальное окружение!${NC}"
+    exit 1
+else
+    echo -e "${GREEN}✅ Виртуальное окружение активировано: $VIRTUAL_ENV${NC}"
+fi
 
 # Устанавливаем/обновляем зависимости
 echo -e "${YELLOW}📦 Устанавливаю зависимости Python...${NC}"
@@ -179,12 +192,19 @@ if [ $? -ne 0 ]; then
 fi
 echo -e "${GREEN}✅ Зависимости установлены${NC}"
 
+# Проверяем что dotenv установился
+python -c "import dotenv; print('✅ dotenv установлен')" 2>/dev/null
+if [ $? -ne 0 ]; then
+    echo -e "${RED}❌ dotenv не установлен! Устанавливаю принудительно...${NC}"
+    pip install python-dotenv==1.0.0
+fi
+
 # 11. Запускаем миграцию БД (уже в venv)
 echo -e "${YELLOW}🔄 Запускаю миграцию базы данных...${NC}"
 cd src
 python migrate_db.py
 MIGRATION_RESULT=$?
-cd ..
+cd "$PROJECT_ROOT" || exit
 
 if [ $MIGRATION_RESULT -eq 0 ]; then
     echo -e "${GREEN}✅ Миграция БД успешно выполнена${NC}"
@@ -193,7 +213,11 @@ else
     exit 1
 fi
 
-# 12. Запускаем бота
+# 12. Выходим из виртуального окружения
+deactivate 2>/dev/null
+echo -e "${YELLOW}🔧 Вышел из виртуального окружения${NC}"
+
+# 13. Запускаем бота
 echo -e "${YELLOW}🚀 Запускаю обновленного бота...${NC}"
 cd docker
 if docker-compose up -d --build; then
@@ -203,13 +227,10 @@ else
     echo "   Проверьте логи: cd docker && docker-compose logs"
     exit 1
 fi
-cd ..
+cd "$PROJECT_ROOT" || exit
 
-# 13. Убираем за собой временную папку
+# 14. Убираем за собой временную папку
 rm -rf "$TEMP_DIR" /tmp/migrate_db.py.bak 2>/dev/null
-
-# Выходим из виртуального окружения
-deactivate 2>/dev/null
 
 echo ""
 echo -e "${GREEN}✅ Обновление завершено!${NC}"
