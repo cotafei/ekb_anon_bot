@@ -8,16 +8,10 @@ BACKUP_FILE="$BACKUP_DIR/ekb_bot_backup_$DATE.tar.gz"
 
 mkdir -p "$BACKUP_DIR"
 
-echo "📦 Создание бэкапа..."
+echo "📦 Создание бэкапа базы данных и логов..."
 
-# Останавливаем бот перед бэкапом
-docker-compose -f docker/docker-compose.yml stop
-
-# Создаем бэкап базы данных и логов
+# Создаём архив только из нужных папок
 tar -czf "$BACKUP_FILE" data/ logs/
-
-# Запускаем бот обратно
-docker-compose -f docker/docker-compose.yml start
 
 echo "✅ Бэкап создан: $BACKUP_FILE"
 echo "📊 Размер: $(du -h "$BACKUP_FILE" | cut -f1)"
