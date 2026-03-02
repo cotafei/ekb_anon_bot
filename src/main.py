@@ -58,7 +58,7 @@ class Paths:
         # Создаем пустой файл лога, если его нет
         log_file = cls.LOG_DIR / 'bot.log'
         if not log_file.exists():
-            log_file.touch(exist_OK=True)
+            log_file.touch(exist_ok=True)
         
         print("✅ Директории созданы:")
         print(f"   📁 Данные: {cls.DATA_DIR}")
@@ -405,4 +405,5 @@ if __name__ == "__main__":
     except Exception as e:
         logging.basicConfig(level=logging.CRITICAL)
         logging.critical(f"💥 Критическая ошибка запуска: {e}", exc_info=True)
+
         sys.exit(1)
