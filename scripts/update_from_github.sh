@@ -2,7 +2,7 @@
 
 # ============================================
 # Скрипт автоматического обновления EKB Anon Bot с GitHub
-# Версия: 3.1 (ИСПРАВЛЕННАЯ - миграция внутри Docker)
+# Версия: 1.2 (с поддержкой миграции БД)
 # ============================================
 
 # Цвета для красивого вывода
@@ -75,13 +75,13 @@ if [ $? -ne 0 ]; then
 fi
 echo -e "${GREEN}✅ Репозиторий скачан${NC}"
 
-# 5. Сохраняем скрипт миграции (НОВЫЙ)
+# 5. Сохраняем скрипт миграции
 if [ -f "src/migrate_db.py" ]; then
     cp src/migrate_db.py /tmp/migrate_db.py.bak
     echo -e "${GREEN}✅ Скрипт миграции сохранен${NC}"
 fi
 
-# 6. Обновляем файлы
+# 6. Обновляем файлы проекта
 echo -e "${YELLOW}🔄 Обновляю файлы проекта...${NC}"
 
 # src
@@ -102,10 +102,10 @@ cp -r "$TEMP_DIR/scripts" ./scripts
 chmod +x scripts/*.sh
 
 # корневые файлы
-cp "$TEMP_DIR/requirements.txt" ./requirements.txt
-cp "$TEMP_DIR/.env.example" ./.env.example
+cp "$TEMP_DIR/requirements.txt" ./requirements.txt 2>/dev/null
+cp "$TEMP_DIR/.env.example" ./.env.example 2>/dev/null
 cp "$TEMP_DIR/CHANGELOG.md" ./CHANGELOG.md 2>/dev/null
-cp "$TEMP_DIR/UPDATE.md" ./UPDATE.md 2>/dev/null
+cp "$TEMP_DIR/README.md" ./README.md 2>/dev/null
 
 echo -e "${GREEN}✅ Файлы обновлены${NC}"
 
@@ -118,42 +118,32 @@ if [ ! -f ".env" ]; then
     exit 1
 fi
 
-# 8. Устанавливаем зависимости Python (НА ХОСТЕ)
-echo -e "${YELLOW}📦 Устанавливаю зависимости Python на хосте...${NC}"
-pip3 install python-dotenv aiogram aiohttp pytz --break-system-packages --ignore-installed
+# 8. ЗАПУСКАЕМ МИГРАЦИЮ ВНУТРИ ДОКЕРА
+echo -e "${YELLOW}🔄 Запускаю миграцию базы данных...${NC}"
 
-if [ $? -ne 0 ]; then
-    echo -e "${RED}❌ Ошибка при установке зависимостей!${NC}"
-    exit 1
-fi
-echo -e "${GREEN}✅ Зависимости установлены${NC}"
+# Проверяем, существует ли контейнер
+CONTAINER_EXISTS=$(docker ps -a -q -f name=ekb-anon-bot)
 
-# 9. Запускаем миграцию (ВНУТРИ ДОКЕРА!)
-echo -e "${YELLOW}🔄 Запускаю миграцию базы данных внутри Docker...${NC}"
-
-# Проверяем, запущен ли контейнер
-CONTAINER_RUNNING=$(docker ps -q -f name=ekb-anon-bot)
-
-if [ -n "$CONTAINER_RUNNING" ]; then
-    echo -e "${GREEN}✅ Контейнер найден, выполняю миграцию...${NC}"
+if [ -n "$CONTAINER_EXISTS" ]; then
+    echo -e "${GREEN}✅ Контейнер найден, копирую скрипт миграции...${NC}"
     
-    # Копируем обновленный скрипт миграции в контейнер
+    # Копируем скрипт миграции в контейнер
     docker cp src/migrate_db.py ekb-anon-bot:/app/src/migrate_db.py
     
-    # Запускаем миграцию внутри контейнера
+    # Запускаем миграцию
+    echo -e "${YELLOW}   Выполняю миграцию...${NC}"
     docker exec ekb-anon-bot python /app/src/migrate_db.py
     
     if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✅ Миграция БД успешно выполнена в контейнере${NC}"
+        echo -e "${GREEN}   ✅ Миграция выполнена успешно${NC}"
     else
-        echo -e "${RED}❌ Ошибка при миграции БД в контейнере!${NC}"
-        echo -e "${YELLOW}   Пробую выполнить миграцию через entrypoint...${NC}"
+        echo -e "${RED}   ❌ Ошибка при миграции${NC}"
     fi
 else
-    echo -e "${YELLOW}⚠️ Контейнер не запущен, миграция будет выполнена при старте${NC}"
+    echo -e "${YELLOW}⚠️ Контейнер не найден, миграция будет выполнена при первом запуске${NC}"
 fi
 
-# 10. Запускаем бота
+# 9. Запускаем бота
 echo -e "${YELLOW}🚀 Запускаю обновленного бота...${NC}"
 cd docker
 docker-compose up -d --build
@@ -165,30 +155,14 @@ else
 fi
 cd "$PROJECT_ROOT" || exit
 
-# 11. ФИНАЛЬНАЯ МИГРАЦИЯ (если контейнер не был запущен)
-sleep 5
-if [ -z "$CONTAINER_RUNNING" ]; then
-    echo -e "${YELLOW}🔄 Выполняю миграцию в новом контейнере...${NC}"
-    docker cp src/migrate_db.py ekb-anon-bot:/app/src/migrate_db.py
-    docker exec ekb-anon-bot python /app/src/migrate_db.py
-    
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✅ Миграция БД успешно выполнена${NC}"
-        docker restart ekb-anon-bot
-    else
-        echo -e "${RED}❌ Ошибка при миграции! Сделай вручную:${NC}"
-        echo "   docker exec -it ekb-anon-bot python /app/src/migrate_db.py"
-    fi
-fi
-
-# 12. Убираем временные файлы
+# 10. Убираем временные файлы
 rm -rf "$TEMP_DIR" /tmp/migrate_db.py.bak 2>/dev/null
 
 echo ""
 echo -e "${GREEN}✅ Обновление завершено!${NC}"
 echo -e "${BLUE}📊 Информация:${NC}"
 echo "   • Резервная копия: $BACKUP_FILE"
-echo "   • Миграция БД: выполнена в Docker"
+echo "   • Миграция БД: выполнена"
 echo "   • Логи: cd docker && docker-compose logs -f"
 echo ""
 echo -e "${YELLOW}📝 Если хочешь посмотреть логи сразу:${NC}"

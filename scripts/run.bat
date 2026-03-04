@@ -4,7 +4,7 @@ title EKB Anon Bot Launcher
 cd /d %~dp0..
 
 echo ========================================
-echo    EKB Anon Bot v1.1.1 - Запуск на Windows
+echo    EKB Anon Bot v1.1.2 - Запуск на Windows
 echo ========================================
 echo.
 

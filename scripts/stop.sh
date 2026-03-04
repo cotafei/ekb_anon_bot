@@ -5,7 +5,7 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-echo -e "${YELLOW}🛑 Остановка бота...${NC}"
+echo -e "${YELLOW}🛑 Останавливаю бота...${NC}"
 
 cd "$(dirname "$0")/../docker" || exit 1
 docker-compose down

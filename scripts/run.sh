@@ -7,7 +7,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 echo -e "${BLUE}==========================================${NC}"
-echo -e "${BLUE}  EKB Anon Bot v1.1.1 - Запуск${NC}"
+echo -e "${BLUE}  EKB Anon Bot v1.1.2 - Запуск${NC}"
 echo -e "${BLUE}==========================================${NC}"
 echo ""
 
@@ -34,6 +34,10 @@ if ! command -v docker &> /dev/null; then
     echo -e "${RED}❌ Docker не установлен!${NC}"
     exit 1
 fi
+
+# Запускаем миграцию перед стартом
+echo -e "${YELLOW}🔄 Проверяю миграцию БД...${NC}"
+cd src && python migrate_db.py && cd ..
 
 echo -e "${YELLOW}🚀 Запуск контейнера...${NC}"
 cd docker && docker-compose down 2>/dev/null && docker-compose up -d --build
