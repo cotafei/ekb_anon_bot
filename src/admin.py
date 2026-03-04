@@ -1,6 +1,6 @@
 """
 Админ панель для модерации постов
-Версия: 1.1.1
+Версия: 1.1.2
 """
 
 from aiogram import types
@@ -175,25 +175,27 @@ async def handle_approve(callback: types.CallbackQuery, bot, post_id: int):
         success = await publish_post(bot, post)
         
         if success:
-            approve_post(post_id)
-            
-            user_id = post[1]
-            await notify_user(
-                bot, 
-                user_id, 
-                f"✅ Ваш пост #{post_id} одобрен и опубликован в канале!"
-            )
-            
-            await callback.message.edit_reply_markup(reply_markup=None)
-            await callback.message.answer(f"✅ Пост #{post_id} одобрен и опубликован")
-            await callback.answer("✅ Одобрено!")
-            
-            pending = get_pending_posts()
-            if pending:
-                await callback.message.answer(
-                    f"⏳ Осталось постов: {len(pending)}\n"
-                    f"Используйте /moderate для продолжения"
+            # Передаём ID модератора в функцию одобрения
+            if approve_post(post_id, callback.from_user.id):
+                user_id = post[1]
+                await notify_user(
+                    bot, 
+                    user_id, 
+                    f"✅ Ваш пост #{post_id} одобрен и опубликован в канале!"
                 )
+                
+                await callback.message.edit_reply_markup(reply_markup=None)
+                await callback.message.answer(f"✅ Пост #{post_id} одобрен и опубликован")
+                await callback.answer("✅ Одобрено!")
+                
+                pending = get_pending_posts()
+                if pending:
+                    await callback.message.answer(
+                        f"⏳ Осталось постов: {len(pending)}\n"
+                        f"Используйте /moderate для продолжения"
+                    )
+            else:
+                await callback.message.answer(f"❌ Не удалось одобрить пост #{post_id} (возможно, он уже обработан).")
         else:
             await callback.answer("❌ Ошибка публикации в канал")
     finally:
@@ -242,16 +244,23 @@ async def handle_view(callback: types.CallbackQuery, post_id: int):
     
     if post:
         status_emoji = "✅" if post[5] == 'approved' else "❌" if post[5] == 'rejected' else "⏳"
+        
+        # Добавляем информацию о модераторе
+        moderated_info = ""
+        if post[8]:  # moderated_by
+            moderated_info = f"👮 Модератор: {post[8]}\n"
+        
         text = (
             f"📋 Информация о посте #{post_id}\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"👤 User ID: {post[1]}\n"
             f"📊 Статус: {status_emoji} {post[5]}\n"
             f"⏰ Создан: {post[6]}\n"
-            f"🕒 Модерирован: {post[7] or 'Еще нет'}\n\n"
+            f"🕒 Модерирован: {post[7] or 'Еще нет'}\n"
+            f"{moderated_info}"
             f"📝 Контент:\n{post[2]}"
         )
-        await callback.answer(text, show_alert=True)
+        await callback.answer(text, show_alert=True, cache_time=0)
     else:
         await callback.answer("❌ Пост не найден")
 
@@ -287,7 +296,8 @@ async def process_reject_reason(message: types.Message, bot, state: FSMContext):
         if reason.lower() in ['пропустить', 'пропусти', 'skip', '-']:
             reason = "не соответствует правилам"
         
-        if reject_post(post_id):
+        # Передаём ID модератора в функцию отклонения
+        if reject_post(post_id, message.from_user.id):
             user_id = post[1]
             await notify_user(
                 bot, 
@@ -369,7 +379,8 @@ async def skip_moderation(message: types.Message, bot, state: FSMContext):
             return
         
         reason = "не соответствует правилам"
-        if reject_post(post_id):
+        # Передаём ID модератора
+        if reject_post(post_id, message.from_user.id):
             user_id = post[1]
             await notify_user(
                 bot, 

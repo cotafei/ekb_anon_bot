@@ -1,7 +1,7 @@
 """
 EKB Anon Bot - Главный модуль приложения
 Анонимный бот для публикации постов в Telegram канал с модерацией
-Версия: 1.1.1
+Версия: 1.1.2
 """
 
 import asyncio
@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import TOKEN, ADMINS
 from database import init_db
 from handlers import (
-    help_handler, rules_handler, stats_handler, 
+    help_handler, rules_handler,
     post_handler, unknown_handler, cancel_handler, skip_handler
 )
 from admin import (
@@ -34,7 +34,7 @@ from admin import (
 )
 from features import (
     start_handler, referral_handler, 
-    daily_bonus_handler, shop_handler
+    daily_bonus_handler, shop_handler, stats_handler
 )
 
 # ============================================================
@@ -113,8 +113,6 @@ class EKBAnonBot:
         self.bot: Bot = None
         self.dp: Dispatcher = None
         self.logger = logging.getLogger(__name__)
-        self.retry_count = 0
-        self.max_retries = 10
         self.storage = MemoryStorage()
         
     async def check_other_instances(self) -> bool:
@@ -208,7 +206,7 @@ class EKBAnonBot:
             post_handler, 
             F.content_type.in_({'text', 'photo', 'video'})
         )
-        
+
         # ===== CALLBACK ЗАПРОСЫ =====
         self.dp.callback_query.register(callback_handler)
         
@@ -264,62 +262,40 @@ class EKBAnonBot:
         
         try:
             await self.initialize()
-            await self._polling_loop()
+            await self._start_polling()
             
         except Exception as e:
             self.logger.critical(f"💥 Критическая ошибка: {e}", exc_info=True)
             await self.shutdown()
             raise
             
-    async def _polling_loop(self) -> None:
-        """Цикл polling с обработкой ошибок"""
+    async def _start_polling(self) -> None:
+        """Запуск polling с обработкой ошибок"""
         self.logger.info("🔄 Запуск polling...")
         self.logger.info("⏳ Бот ожидает сообщений...")
         self.logger.info("📊 Нажмите Ctrl+C для остановки")
         
-        while True:
-            try:
-                await self.dp.start_polling(
-                    self.bot,
-                    allowed_updates=['message', 'callback_query'],
-                    handle_signals=True,
-                    close_bot_session=True
-                )
-                
-            except TelegramNetworkError as e:
-                self.retry_count += 1
-                self.logger.error(
-                    f"🌐 Сетевая ошибка ({self.retry_count}/{self.max_retries}): {e}"
-                )
-                
-                if self.retry_count >= self.max_retries:
-                    self.logger.critical("❌ Достигнут лимит попыток подключения")
-                    break
-                    
-                wait_time = min(30 * self.retry_count, 300)
-                self.logger.info(f"⏳ Ожидание {wait_time}с перед переподключением...")
-                await asyncio.sleep(wait_time)
-                
-            except TelegramRetryAfter as e:
-                self.logger.warning(
-                    f"⏰ Лимит запросов. Ожидание {e.retry_after}с"
-                )
-                await asyncio.sleep(e.retry_after)
-                self.retry_count = 0
-                
-            except asyncio.CancelledError:
-                self.logger.info("⚠️ Задача отменена")
-                break
-                
-            except KeyboardInterrupt:
-                self.logger.info("🛑 Получен сигнал остановки")
-                break
-                
-            except Exception as e:
-                self.logger.error(f"❌ Неизвестная ошибка: {e}", exc_info=True)
-                self.logger.info("⏳ Перезапуск через 60с...")
-                await asyncio.sleep(60)
-                self.retry_count = 0
+        try:
+            # start_polling сам обрабатывает многие ошибки и переподключается
+            await self.dp.start_polling(
+                self.bot,
+                allowed_updates=['message', 'callback_query'],
+                handle_signals=True,
+                close_bot_session=True,
+            )
+        except TelegramNetworkError as e:
+            self.logger.error(f"🌐 Критическая сетевая ошибка: {e}")
+            self.logger.info("🔄 Попробуйте перезапустить бота через несколько минут...")
+        except TelegramRetryAfter as e:
+            self.logger.error(f"⏰ Превышен лимит запросов: {e}")
+        except asyncio.CancelledError:
+            self.logger.info("⚠️ Задача отменена")
+        except KeyboardInterrupt:
+            self.logger.info("🛑 Получен сигнал остановки")
+        except Exception as e:
+            self.logger.error(f"❌ Неизвестная ошибка в polling: {e}", exc_info=True)
+        finally:
+            self.logger.info("🛑 Polling остановлен.")
                 
     async def shutdown(self) -> None:
         """Корректное завершение работы"""
@@ -361,7 +337,7 @@ async def main() -> None:
     logger = BotLogger.setup()
     
     print("\n" + "="*60)
-    print("📦 EKB Anon Bot v1.1.1".center(60))
+    print("📦 EKB Anon Bot v1.1.2".center(60))
     print("="*60 + "\n")
     
     if not TOKEN:

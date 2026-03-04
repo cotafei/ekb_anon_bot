@@ -18,6 +18,12 @@ async def publish_post(bot: Bot, post) -> bool:
     Возвращает True при успехе, False при ошибке
     """
     try:
+        # Проверка прав бота
+        bot_member = await bot.get_chat_member(CHANNEL_ID, (await bot.get_me()).id)
+        if bot_member.status not in ['administrator', 'creator']:
+            logger.error(f"❌ Бот не админ в канале {CHANNEL_ID}")
+            return False
+            
         # Распаковываем все 9 полей поста
         (post_id, user_id, content, media_type, media_id, 
          status, created_at, moderated_at, moderated_by) = post

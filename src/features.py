@@ -1,14 +1,12 @@
 """
 Модуль с функциями для пользователей бота
-Версия: 1.1.0
+Версия: 1.1.1
 """
 
-import sqlite3
-from aiogram import types, Bot
-from aiogram.filters import Command
+from aiogram import types
 from datetime import datetime
-from config import DB_PATH, CHANNEL_ID, REFERRAL_BONUS
-from database import add_user, get_user_balance, add_user_points, get_referral_stats, update_last_bonus_date, get_last_bonus_date, add_referral
+from config import REFERRAL_BONUS, DAILY_BONUS
+from database import add_user, get_user_balance, add_user_points, get_referral_stats, update_last_bonus_date, get_last_bonus_date
 
 async def start_handler(message: types.Message):
     """Обработчик команды /start"""
@@ -18,6 +16,9 @@ async def start_handler(message: types.Message):
         if ref_code.startswith('ref_'):
             try:
                 referrer_id = int(ref_code.replace('ref_', ''))
+                # Исключаем возможность пригласить самого себя
+                if referrer_id == message.from_user.id:
+                    referrer_id = None
             except ValueError:
                 referrer_id = None
     
@@ -30,8 +31,8 @@ async def start_handler(message: types.Message):
     )
     
     if referrer_id:
-        add_referral(referrer_id, message.from_user.id)
-        add_user_points(referrer_id, REFERRAL_BONUS, "referral_bonus")
+        # Начисляем бонус рефереру
+        add_user_points(referrer_id, REFERRAL_BONUS, "referral_bonus", message.from_user.id)
     
     text = "👋 Привет! Это анонимный бот для Екатеринбурга.\n\n"
     
@@ -58,15 +59,14 @@ async def referral_handler(message: types.Message):
     
     # Получаем статистику
     direct_refs, second_refs = get_referral_stats(message.from_user.id)
-    earned = (direct_refs * 50) + (second_refs * 25)
+    earned = (direct_refs * REFERRAL_BONUS) + (second_refs * (REFERRAL_BONUS // 2))
     
-    # Простой текст - ссылка будет кликабельной автоматически
     text = (
         "👥 Приглашай друзей - получай монеты!\n\n"
         f"🔗 Твоя ссылка: {ref_link}\n\n"
         "💸 Награды:\n"
-        f"• За друга: +50 монет\n"
-        f"• За друга друга: +25 монет\n\n"
+        f"• За друга: +{REFERRAL_BONUS} монет\n"
+        f"• За друга друга: +{REFERRAL_BONUS // 2} монет\n\n"
         f"📊 Твоя статистика:\n"
         f"• Приглашено: {direct_refs} друзей\n"
         f"• Друзья друзей: {second_refs}\n"
@@ -86,11 +86,10 @@ async def daily_bonus_handler(message: types.Message):
         await message.answer("🎁 Сегодня ты уже получал бонус! Завтра приходи")
         return
     
-    bonus = 10
-    add_user_points(user_id, bonus, "daily_bonus")
+    add_user_points(user_id, DAILY_BONUS, "daily_bonus")
     update_last_bonus_date(user_id, today)
     
-    await message.answer(f"🎁 Ежедневный бонус! Получено {bonus} монет!")
+    await message.answer(f"🎁 Ежедневный бонус! Получено {DAILY_BONUS} монет!")
 
 async def stats_handler(message: types.Message):
     """Обработчик команды /stats"""
@@ -116,13 +115,5 @@ async def stats_handler(message: types.Message):
 
 async def shop_handler(message: types.Message):
     """Обработчик команды /shop"""
-    text = (
-        "🛍️ Магазин привилегий:\n\n"
-        "🚀 Срочная модерация - 100 монет\n"
-        "📌 Закреп поста на 24ч - 300 монет\n"
-        "🎨 Цветной текст - 50 монет\n"
-        "👻 Полная анонимность - 200 монет\n\n"
-        "💡 Используй монеты для улучшения постов!"
-    )
-    
+    text = "🛍 Магазин временно на разработке. Скоро здесь можно будет тратить монеты!"
     await message.answer(text)

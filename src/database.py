@@ -1,6 +1,6 @@
 """
 Модуль для работы с базой данных SQLite
-Версия: 1.1.1
+Версия: 1.1.2
 """
 
 import sqlite3
@@ -184,34 +184,46 @@ def get_post_by_id(post_id: int) -> Optional[Tuple]:
         logger.error(f"Ошибка получения поста {post_id}: {e}")
         return None
 
-def approve_post(post_id: int):
+def approve_post(post_id: int, moderator_id: int = None) -> bool:
     """Одобрение поста (изменение статуса на approved)"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
             UPDATE posts 
-            SET status='approved', moderated_at=CURRENT_TIMESTAMP 
+            SET status='approved', moderated_at=CURRENT_TIMESTAMP, moderated_by=?
             WHERE id=? AND status='pending'
-            """, (post_id,))
+            """, (moderator_id, post_id))
             return cursor.rowcount > 0
     except Exception as e:
         logger.error(f"Ошибка одобрения поста {post_id}: {e}")
         return False
 
-def reject_post(post_id: int):
+def reject_post(post_id: int, moderator_id: int = None) -> bool:
     """Отклонение поста (изменение статуса на rejected)"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
             UPDATE posts 
-            SET status='rejected', moderated_at=CURRENT_TIMESTAMP 
+            SET status='rejected', moderated_at=CURRENT_TIMESTAMP, moderated_by=?
             WHERE id=? AND status='pending'
-            """, (post_id,))
+            """, (moderator_id, post_id))
             return cursor.rowcount > 0
     except Exception as e:
         logger.error(f"Ошибка отклонения поста {post_id}: {e}")
+        return False
+
+def is_user_banned(user_id: int) -> bool:
+    """Проверка, забанен ли пользователь"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT is_banned FROM users WHERE id = ?", (user_id,))
+            result = cursor.fetchone()
+            return bool(result and result['is_banned'])
+    except Exception as e:
+        logger.error(f"Ошибка проверки бана {user_id}: {e}")
         return False
 
 def get_user_stats(user_id: int) -> Tuple[int, int]:
@@ -272,24 +284,27 @@ def get_user_balance(user_id: int) -> int:
         logger.error(f"Ошибка получения баланса {user_id}: {e}")
         return 0
 
-def add_user_points(user_id: int, points: int, reason: str):
+def add_user_points(user_id: int, points: int, reason: str, referrer_id: int = None):
     """Начисление монет пользователю"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
             cursor.execute("""
-            INSERT INTO user_points (user_id, points) VALUES (?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET points = points + ?
-            """, (user_id, points, points))
+            INSERT INTO user_points (user_id, points, total_earned) VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET 
+                points = points + ?,
+                total_earned = total_earned + ?
+            """, (user_id, points, points, points, points))
             
             cursor.execute("""
-            INSERT INTO points_log (user_id, points, reason) VALUES (?, ?, ?)
-            """, (user_id, points, reason))
+            INSERT INTO points_log (user_id, points, reason, referrer_id) 
+            VALUES (?, ?, ?, ?)
+            """, (user_id, points, reason, referrer_id))
             
             return True
     except Exception as e:
-        logger.error(f"Ошибка начисления монет: {e}")
+        logger.error(f"Ошибка начисления монет пользователю {user_id}: {e}")
         return False
 
 def get_referral_stats(user_id: int) -> Tuple[int, int]:
@@ -339,7 +354,3 @@ def get_last_bonus_date(user_id: int) -> Optional[str]:
     except Exception as e:
         logger.error(f"Ошибка получения даты бонуса: {e}")
         return None
-
-def add_referral(referrer_id: int, user_id: int):
-    """Добавление реферала (заглушка для совместимости)"""
-    pass

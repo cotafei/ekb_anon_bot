@@ -1,6 +1,6 @@
 """
 Конфигурационный файл бота EKB Anon Bot
-Версия: 1.1.1
+Версия: 1.1.2
 """
 
 import os
@@ -36,6 +36,9 @@ if not ADMINS_STR:
     raise ValueError("❌ ADMINS не найдены в .env")
 ADMINS = [int(x.strip()) for x in ADMINS_STR.split(',') if x.strip()]
 
+# Контакт поддержки (опционально, по умолчанию @C0taf31)
+SUPPORT_CONTACT = os.getenv('SUPPORT_CONTACT', '@C0taf31')
+
 # Путь к файлу базы данных SQLite
 DB_PATH = str(DATA_DIR / 'anon_ekb.db')
 
@@ -44,5 +47,7 @@ MAX_POST_LENGTH = 400      # Максимальная длина текста
 MIN_POST_LENGTH = 20       # Минимальная длина текста
 MAX_MEDIA_SIZE = 20 * 1024 * 1024  # Максимальный размер медиафайлов (20MB)
 
-# Настройки реферальной системы
+# Настройки бонусов
 REFERRAL_BONUS = 50  # Количество монет за приглашенного друга
+DAILY_BONUS = 10     # Ежедневный бонус
+POST_COOLDOWN_SECONDS = 60  # Защита от спама
