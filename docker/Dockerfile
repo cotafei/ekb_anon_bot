@@ -1,8 +1,13 @@
 FROM python:3.11-slim
 
-# Установка системных зависимостей
+# Установка системных зависимостей и полезных утилит
 RUN apt-get update && apt-get install -y \
     gcc \
+    sqlite3 \
+    curl \
+    wget \
+    nano \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 # Создание пользователя для безопасности
