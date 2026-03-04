@@ -1,7 +1,7 @@
 """
 Миграция базы данных для обновления со старой версии на новую
 Запусти один раз перед новым ботом для сохранения данных
-Версия: 1.0.0
+Версия: 1.1.0
 """
 
 import sqlite3
@@ -69,13 +69,41 @@ def migrate_database():
         else:
             logger.info("   ✅ Поле total_earned уже существует")
         
-        # ===== 4. Создаем недостающие индексы =====
+        # ===== 4. Обновление таблицы points_log =====
+        logger.info("📝 Проверка таблицы points_log...")
+        
+        cursor.execute("PRAGMA table_info(points_log)")
+        columns = [col[1] for col in cursor.fetchall()]
+        
+        if 'referrer_id' not in columns:
+            logger.info("   ➕ Добавляем поле referrer_id в points_log")
+            cursor.execute("ALTER TABLE points_log ADD COLUMN referrer_id INTEGER")
+            
+            # Заполняем referrer_id из связанных данных (если есть)
+            try:
+                cursor.execute("""
+                    UPDATE points_log 
+                    SET referrer_id = (
+                        SELECT referrer_id FROM users 
+                        WHERE users.id = points_log.user_id
+                    )
+                    WHERE referrer_id IS NULL
+                """)
+                logger.info(f"   📊 Обновлено {cursor.rowcount} записей с referrer_id")
+            except Exception as e:
+                logger.warning(f"   ⚠️ Не удалось заполнить referrer_id: {e}")
+        else:
+            logger.info("   ✅ Поле referrer_id уже существует")
+        
+        # ===== 5. Создаем недостающие индексы =====
         logger.info("📝 Проверка индексов...")
         
         indexes = [
             "CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status)",
             "CREATE INDEX IF NOT EXISTS idx_posts_user_id ON posts(user_id)",
-            "CREATE INDEX IF NOT EXISTS idx_users_referrer ON users(referrer_id)"
+            "CREATE INDEX IF NOT EXISTS idx_users_referrer ON users(referrer_id)",
+            "CREATE INDEX IF NOT EXISTS idx_points_log_user ON points_log(user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_points_log_referrer ON points_log(referrer_id)"
         ]
         
         for index in indexes:
@@ -88,7 +116,7 @@ def migrate_database():
         conn.commit()
         logger.info("✅ Миграция успешно завершена!")
         
-        # ===== 5. Показываем статистику после миграции =====
+        # ===== 6. Показываем статистику после миграции =====
         cursor.execute("SELECT COUNT(*) FROM posts")
         posts_count = cursor.fetchone()[0]
         
@@ -98,10 +126,18 @@ def migrate_database():
         cursor.execute("SELECT COUNT(*) FROM posts WHERE status='pending'")
         pending_count = cursor.fetchone()[0]
         
+        cursor.execute("SELECT COUNT(*) FROM points_log")
+        points_log_count = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM points_log WHERE referrer_id IS NOT NULL")
+        points_with_referrer = cursor.fetchone()[0]
+        
         logger.info(f"📊 Статистика после миграции:")
         logger.info(f"   • Постов всего: {posts_count}")
         logger.info(f"   • Пользователей: {users_count}")
         logger.info(f"   • Ожидают модерации: {pending_count}")
+        logger.info(f"   • Логов начислений: {points_log_count}")
+        logger.info(f"   • Логов с реферером: {points_with_referrer}")
         
         conn.close()
         return True
