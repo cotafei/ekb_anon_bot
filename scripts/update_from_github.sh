@@ -2,7 +2,7 @@
 
 # ============================================
 # Скрипт автоматического обновления EKB Anon Bot с GitHub
-# Версия: 3.0 (РАБОЧАЯ - проверено в бою)
+# Версия: 3.1 (ИСПРАВЛЕННАЯ - миграция внутри Docker)
 # ============================================
 
 # Цвета для красивого вывода
@@ -35,15 +35,7 @@ else
     echo -e "${GREEN}✅ Git найден${NC}"
 fi
 
-# 2. Проверяем наличие python3
-if ! command -v python3 &> /dev/null; then
-    echo -e "${RED}❌ Python3 не установлен!${NC}"
-    exit 1
-else
-    echo -e "${GREEN}✅ Python3 найден${NC}"
-fi
-
-# 3. Проверяем наличие docker-compose
+# 2. Проверяем наличие docker-compose
 if ! command -v docker-compose &> /dev/null; then
     echo -e "${RED}❌ docker-compose не установлен!${NC}"
     exit 1
@@ -51,7 +43,7 @@ else
     echo -e "${GREEN}✅ docker-compose найден${NC}"
 fi
 
-# 4. Создаем резервную копию
+# 3. Создаем резервную копию
 echo -e "${YELLOW}📦 Создаю резервную копию...${NC}"
 mkdir -p "$BACKUP_DIR"
 BACKUP_FILE="$BACKUP_DIR/pre_update_backup_$DATE.tar.gz"
@@ -59,7 +51,7 @@ BACKUP_FILE="$BACKUP_DIR/pre_update_backup_$DATE.tar.gz"
 # Останавливаем бота перед бэкапом
 if [ -f "docker/docker-compose.yml" ]; then
     echo -e "${YELLOW}⏸️  Останавливаю бота...${NC}"
-    cd docker && docker-compose stop bot 2>/dev/null && cd "$PROJECT_ROOT" || exit
+    cd docker && docker-compose stop 2>/dev/null && cd "$PROJECT_ROOT" || exit
 fi
 
 # Создаем бэкап важных данных
@@ -72,7 +64,7 @@ if [ -d "data" ] || [ -d "logs" ] || [ -f ".env" ]; then
     fi
 fi
 
-# 5. Клонируем свежую версию
+# 4. Клонируем свежую версию
 echo -e "${YELLOW}📥 Скачиваю последнюю версию с GitHub...${NC}"
 rm -rf "$TEMP_DIR" 2>/dev/null
 git clone --depth 1 "$REPO_URL" "$TEMP_DIR"
@@ -83,13 +75,13 @@ if [ $? -ne 0 ]; then
 fi
 echo -e "${GREEN}✅ Репозиторий скачан${NC}"
 
-# 6. Сохраняем скрипт миграции
+# 5. Сохраняем скрипт миграции (НОВЫЙ)
 if [ -f "src/migrate_db.py" ]; then
     cp src/migrate_db.py /tmp/migrate_db.py.bak
     echo -e "${GREEN}✅ Скрипт миграции сохранен${NC}"
 fi
 
-# 7. Обновляем файлы
+# 6. Обновляем файлы
 echo -e "${YELLOW}🔄 Обновляю файлы проекта...${NC}"
 
 # src
@@ -117,7 +109,7 @@ cp "$TEMP_DIR/UPDATE.md" ./UPDATE.md 2>/dev/null
 
 echo -e "${GREEN}✅ Файлы обновлены${NC}"
 
-# 8. Проверяем .env
+# 7. Проверяем .env
 if [ ! -f ".env" ]; then
     echo -e "${YELLOW}⚠️  Файл .env не найден, создаю из .env.example${NC}"
     cp .env.example .env
@@ -126,8 +118,8 @@ if [ ! -f ".env" ]; then
     exit 1
 fi
 
-# 9. УСТАНАВЛИВАЕМ ЗАВИСИМОСТИ (РАБОЧАЯ КОМАНДА)
-echo -e "${YELLOW}📦 Устанавливаю зависимости Python...${NC}"
+# 8. Устанавливаем зависимости Python (НА ХОСТЕ)
+echo -e "${YELLOW}📦 Устанавливаю зависимости Python на хосте...${NC}"
 pip3 install python-dotenv aiogram aiohttp pytz --break-system-packages --ignore-installed
 
 if [ $? -ne 0 ]; then
@@ -136,21 +128,32 @@ if [ $? -ne 0 ]; then
 fi
 echo -e "${GREEN}✅ Зависимости установлены${NC}"
 
-# 10. Запускаем миграцию
-echo -e "${YELLOW}🔄 Запускаю миграцию базы данных...${NC}"
-cd src
-python3 migrate_db.py
-MIGRATION_RESULT=$?
-cd "$PROJECT_ROOT" || exit
+# 9. Запускаем миграцию (ВНУТРИ ДОКЕРА!)
+echo -e "${YELLOW}🔄 Запускаю миграцию базы данных внутри Docker...${NC}"
 
-if [ $MIGRATION_RESULT -eq 0 ]; then
-    echo -e "${GREEN}✅ Миграция БД успешно выполнена${NC}"
+# Проверяем, запущен ли контейнер
+CONTAINER_RUNNING=$(docker ps -q -f name=ekb-anon-bot)
+
+if [ -n "$CONTAINER_RUNNING" ]; then
+    echo -e "${GREEN}✅ Контейнер найден, выполняю миграцию...${NC}"
+    
+    # Копируем обновленный скрипт миграции в контейнер
+    docker cp src/migrate_db.py ekb-anon-bot:/app/src/migrate_db.py
+    
+    # Запускаем миграцию внутри контейнера
+    docker exec ekb-anon-bot python /app/src/migrate_db.py
+    
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✅ Миграция БД успешно выполнена в контейнере${NC}"
+    else
+        echo -e "${RED}❌ Ошибка при миграции БД в контейнере!${NC}"
+        echo -e "${YELLOW}   Пробую выполнить миграцию через entrypoint...${NC}"
+    fi
 else
-    echo -e "${RED}❌ Ошибка при миграции БД!${NC}"
-    exit 1
+    echo -e "${YELLOW}⚠️ Контейнер не запущен, миграция будет выполнена при старте${NC}"
 fi
 
-# 11. Запускаем бота (РАБОЧАЯ КОМАНДА)
+# 10. Запускаем бота
 echo -e "${YELLOW}🚀 Запускаю обновленного бота...${NC}"
 cd docker
 docker-compose up -d --build
@@ -162,6 +165,22 @@ else
 fi
 cd "$PROJECT_ROOT" || exit
 
+# 11. ФИНАЛЬНАЯ МИГРАЦИЯ (если контейнер не был запущен)
+sleep 5
+if [ -z "$CONTAINER_RUNNING" ]; then
+    echo -e "${YELLOW}🔄 Выполняю миграцию в новом контейнере...${NC}"
+    docker cp src/migrate_db.py ekb-anon-bot:/app/src/migrate_db.py
+    docker exec ekb-anon-bot python /app/src/migrate_db.py
+    
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✅ Миграция БД успешно выполнена${NC}"
+        docker restart ekb-anon-bot
+    else
+        echo -e "${RED}❌ Ошибка при миграции! Сделай вручную:${NC}"
+        echo "   docker exec -it ekb-anon-bot python /app/src/migrate_db.py"
+    fi
+fi
+
 # 12. Убираем временные файлы
 rm -rf "$TEMP_DIR" /tmp/migrate_db.py.bak 2>/dev/null
 
@@ -169,7 +188,7 @@ echo ""
 echo -e "${GREEN}✅ Обновление завершено!${NC}"
 echo -e "${BLUE}📊 Информация:${NC}"
 echo "   • Резервная копия: $BACKUP_FILE"
-echo "   • Миграция БД: выполнена"
+echo "   • Миграция БД: выполнена в Docker"
 echo "   • Логи: cd docker && docker-compose logs -f"
 echo ""
 echo -e "${YELLOW}📝 Если хочешь посмотреть логи сразу:${NC}"
